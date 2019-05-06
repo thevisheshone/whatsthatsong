@@ -1,0 +1,6 @@
+"0","library(tidyverse) # general utility & workflow functions"
+"0","library(tidytext) # tidy implimentation of NLP methods"
+"0","library(topicmodels) # for LDA topic modelling "
+"0","library(tm) # general text mining functions, making document term matrixes"
+"0","library(SnowballC) # for stemming"
+"0","library(seewave) #For calculating KL Distance"

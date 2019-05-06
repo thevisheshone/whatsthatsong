@@ -1,0 +1,59 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+---
+title: "What Song Is that?"
+output: html_document
+---
+```{r messages=FALSE,warning=FALSE}
+
+library(tidyverse) # general utility & workflow functions
+library(tidytext) # tidy implimentation of NLP methods
+library(topicmodels) # for LDA topic modelling 
+library(tm) # general text mining functions, making document term matrixes
+library(SnowballC) # for stemming
+
+```
+
+
+
+```{r}
+setwd("~/SYS6018/Final/")
+filesInDir <- list.files(path = "./lyricsdb",  recursive= TRUE, full.names = TRUE)
+filesdb <- data.frame(fullpath = filesInDir);
+
+processfilename = function(path, action = "song") {
+  pathparts = strsplit(path, "/")
+  if(action == "song") {
+    return(toString(pathparts[[1]][6]))
+  } else if(action == "album") {
+    return(toString(pathparts[[1]][5]))
+  } else if(action == "artist") {
+    return(toString(pathparts[[1]][4]))
+  }
+  return(NA)
+}
+filesdb$song = sapply(as.character(filesdb$fullpath), processfilename, action="song")
+filesdb$artist = sapply(as.character(filesdb$fullpath), processfilename, action="artist")
+filesdb$album = sapply(as.character(filesdb$fullpath), processfilename, action="album")
+
+
+getLyrics = function(filename) {
+  lines = readLines(filename)
+  lyrics = ""
+  for(i in lines) {
+    lyrics = paste(lyrics, i)
+  }
+  return(toString(lyrics[[1]]))
+}
+alllyrics = sapply(as.character(filesdb$fullpath), getLyrics)
+
+filesdb$lyrics = alllyrics
+
+
+head(filesdb)
+lyricsdb = filesdb
+
+```

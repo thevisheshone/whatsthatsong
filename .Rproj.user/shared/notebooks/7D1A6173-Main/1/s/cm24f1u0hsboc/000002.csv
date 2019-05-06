@@ -1,0 +1,3 @@
+"0","setwd(""~/SYS6018/Final/"")"
+"0","filesInDir <- list.files(path = ""./lyricsdb"",  recursive= TRUE, full.names = TRUE)"
+"0","filesdb <- data.frame(fullpath = filesInDir);"

@@ -1,0 +1,24 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1557010044914.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "96A612FF",
+    "lastKnownWriteTime" : 1557010092,
+    "last_content_update" : 1557010092545,
+    "path" : "~/SYS6018/Final/LDA.rmd",
+    "project_path" : "LDA.rmd",
+    "properties" : {
+        "chunk_output_type" : "inline",
+        "cursorPosition" : "40,0",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

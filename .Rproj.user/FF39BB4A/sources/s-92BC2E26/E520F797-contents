@@ -1,0 +1,373 @@
+---
+title: "What Song Is that?"
+output: 
+  html_document:
+    df_print: paged
+author: "Vishesh S. Hiremath - vsh5db@virginia.edu"
+---
+# Introduction
+
+Have you ever tried to remember this song name, where you know what the song is about, and some parts of the lyrics, but can't remember what song it is? Today we are going to learn a very easy way *(read: overly complicated but hey, we're learning something new- way)* to be able to remember what song it is. 
+
+Today we are going to learn about a text analytics/NLP method called topic modeling. Topic modeling is primarily used for two reasons: 
+
+* Identifying what a particular document or corpus of documents is talking about.
+* What are the top terms relating to a topic. 
+
+
+## Theory
+
+We will need to understand two main theories related to topic modeling before we proceed. 
+
+### 1. LDA: Latent Dirichlet Allocation
+
+LDA is a generative probabilistic model of a corpus. The basic idea is that the documents are represented as random mixtures over latent topics, where a topic is characterized by a distribution over words. Latent Dirichlet allocation (LDA), first introduced by Blei, Ng and Jordan in 2003, is one of the most popular methods in topic modeling. LDA represents topics by word probabilities. The words with highest probabilities in each topic usually give a good idea of what the topic is can word
+probabilities from LDA. 
+
+Various methods have been proposed to estimate LDA parameters, Gibbs sampling is one of the more commonly used method:
+
+Gibbs sampling, is a Monte Carlo Markov-chain algorithm, powerful technique in statistical inference, and a method of generating a sample from a joint distribution when only conditional distributions of each variable can be efficiently computed. According to our knowledge, researchers have widely used this method
+for the LDA.
+
+*Parts of the above text taken from: https://arxiv.org/pdf/1711.04305.pdf . Please go through the document for mathematical explanation of how LDA works.*
+
+### 2. TFIDF: Term Frequency Inverse Document Frequency
+
+TFIDF is another method (not exactly relating to topic modeling but commonly used together) which helps us get the top terms for a given document, when the document is a part of a bigger corpus. The main idea behind TFIDF is:
+
+* The terms which describe the document appear a lot in the document. 
+* The terms which particularly describe **this** document appear less across all other documents.
+
+Therefore, to find the top terms for a given document, we just need to find the term frequency for each document (common words having higher frequency value), and then multiply that with an inverse of document frequency(how frequently does that term appear across all documents?)
+
+***
+
+# Code
+
+### Importing a database of lyrics
+
+Lets first go ahead and import all the libraries that we are going to use at the top: 
+
+```{r messages=FALSE,warning=FALSE}
+
+library(tidyverse) # general utility & workflow functions
+library(tidytext) # tidy implimentation of NLP methods
+library(topicmodels) # for LDA topic modelling 
+library(tm) # general text mining functions, making document term matrixes
+library(SnowballC) # for stemming
+library(seewave) #For calculating KL Distance
+
+```
+
+Lets start by first creatinng a database of the lyrics. I found an open lyrics database of a select few songs here: https://github.com/Lyrics/lyrics
+Lets clone the github repository, and extract out the folder called **database**. 
+The lyrics database is neatly organized with letter > artist > album > song structure. 
+Once we have the directory structure ready, let's go ahead and import the database:
+
+```{r}
+setwd("~/SYS6018/Final/")
+filesInDir <- list.files(path = "./lyricsdb",  recursive= TRUE, full.names = TRUE)
+filesdb <- data.frame(fullpath = filesInDir);
+```
+
+
+We can now process the filesdb data frame to get the artist, album, and song information in separate columns in the following way:
+
+```{r}
+
+processfilename = function(path, action = "song") {
+  pathparts = strsplit(path, "/")
+  if(action == "song") {
+    return(toString(pathparts[[1]][6]))
+  } else if(action == "album") {
+    return(toString(pathparts[[1]][5]))
+  } else if(action == "artist") {
+    return(toString(pathparts[[1]][4]))
+  }
+  return(NA)
+}
+filesdb$song = sapply(as.character(filesdb$fullpath), processfilename, action="song")
+filesdb$artist = sapply(as.character(filesdb$fullpath), processfilename, action="artist")
+filesdb$album = sapply(as.character(filesdb$fullpath), processfilename, action="album")
+
+```
+
+Obviously, We also need to add a column for lyrics:
+
+```{r}
+
+getLyrics = function(filename) {
+  lines = readLines(filename)
+  lyrics = ""
+  for(i in lines) {
+    lyrics = paste(lyrics, i)
+  }
+  return(toString(lyrics[[1]]))
+}
+alllyrics = sapply(as.character(filesdb$fullpath), getLyrics)
+
+filesdb$lyrics = alllyrics
+
+
+head(filesdb)
+lyricsdb = filesdb
+
+```
+
+With that our lyrics database is ready. 
+
+But we still need to clean the databse so we don't face any problems later in the program:
+
+```{r}
+
+#cleaning the lyrics:
+lyricsdb$lyrics = tm::removePunctuation(lyricsdb$lyrics, ucp=FALSE)
+lyricsdb$lyrics = tm::removeNumbers(lyricsdb$lyrics, ucp=FALSE)
+lyricsdb$lyrics = tm::stripWhitespace(lyricsdb$lyrics)
+```
+
+## LDA 
+
+Lets first look at generating the topics of LDA. This is just to learn how LDA works, but we will use TFIDF in the next step to match a description of the song with the lyrics. 
+
+top_terms_by_topic_LDA will take a column of text which has multiple documents in a database, and generate number_of_topics topics from those documents. It uses a default LDA method provided by the topicmodels package. 
+
+The following functions will help us get our topics for the documents that we pass:
+```{r}
+
+customStopWords <- c("the", "and", "http","github", "can", "use", "url", "Name", "Album", "Artist", "Common", "Courtesy")
+top_terms_by_topic_LDA <- function(input_text, # should be a columm from a dataframe
+                                   number_of_topics = 5) # number of topics (5 by default)
+{    
+  
+  
+    # create a corpus (type of object expected by tm) and document term matrix
+    CorpusObject <- tm::VCorpus(tm::VectorSource(input_text)) # make a corpus object
+    
+    
+    DTM <- tm::DocumentTermMatrix(CorpusObject) # get the count of words/document
+
+    # remove any empty rows in our document term matrix (if there are any 
+    # we'll get an error when we try to run our LDA): Technically not applicable for current project
+    unique_indexes <- unique(DTM$i) # get the index of each unique value
+    DTM <- DTM[unique_indexes,] # get a subset of only those indexes
+    
+    # preform LDA & get the words/topic in a tidy text format
+    lda <- LDA(DTM, k = number_of_topics, control = list(seed = 1234))
+    topics <- tidy(lda, matrix = "beta")
+    
+    custom_stop_words <- tibble(word = customStopWords)
+    # remove stopwords
+    tidyCleaned <- topics %>% # take our tidy dtm and...
+      anti_join(stop_words, by = c("term" = "word")) %>% # remove English stopwords and...
+      anti_join(custom_stop_words, by = c("term" = "word")) # remove my custom stopwords
+
+    
+    # get the top  terms for each topic
+    top_terms <- tidyCleaned  %>% # take the topics data frame and..
+      group_by(topic) %>% # treat each topic as a different group
+      top_n(20, beta) %>% # get the top most informative words
+      ungroup() %>% # ungroup
+      arrange(topic, -beta) # arrange words in descending informativeness
+    
+
+      return(top_terms)
+}
+
+plot_top_terms <- function(top_terms) {
+  # plot the top ten terms for each topic in order
+  return(top_terms %>% # take the top terms
+      mutate(term = reorder(term, beta)) %>% # sort terms by beta value 
+      ggplot(aes(term, beta, fill = factor(topic))) + # plot beta by theme
+      geom_col(show.legend = FALSE) + # as a bar plot
+      facet_wrap(~ topic, scales = "free") + # which each topic in a seperate plot
+      labs(x = NULL, y = "Beta") + # no x label, change y label 
+      coord_flip() )# turn bars sideways
+}
+
+```
+
+Let us now look at a common topics which our favourite aritsts write about:
+```{r}
+
+#Checkinng for Ed Sheeran
+
+edSheeranTopics <- top_terms_by_topic_LDA(lyricsdb %>% filter(artist == "Ed Sheeran") %>% select(lyrics), 4)
+plot_top_terms(edSheeranTopics)
+
+```
+
+```{r}
+#Lets also look at what Breaking Benjamin is all about:
+breakingBenjaminTopics <- top_terms_by_topic_LDA(lyricsdb %>% filter(artist == "Breaking Benjamin") %>% select(lyrics), 4)
+plot_top_terms(breakingBenjaminTopics)
+
+```
+
+Usually the 4 topics that we get are supposed to be talking about 4 completely different things, even though we get a similar theme of topics here, that may be because most songs by a particular artist are similar to each other anyway. 
+
+## TFIDF:
+
+Now let us try to match the description of a song with one of the songs from our database.
+
+### Defining our Functions for extracting TFIDF:
+Lets define a couple of functions, The following function (topTermsTfidf) takes a data frame, along with a columnn name where the text exists(lyrics in our case) and a column name for group, can be link to have a primary key-sort of column. 
+```{r}
+
+topTermsTfidf <- function(textdf, textColumn, groupColumn) {
+  textColumn <- enquo(textColumn)
+  groupColumn <- enquo(groupColumn)
+  
+  
+  # get the count of each word in each attack pattern
+  countOfWords <- textdf %>%
+    unnest_tokens(word, !!textColumn) %>%
+    count(!!groupColumn, word) %>%
+    ungroup()
+  
+  # number of words per text:
+  numberOfWords <- countOfWords %>%
+    group_by(!!groupColumn) %>%
+    summarize(total = sum(n))
+  
+  #combine the two dataframes
+  words <- left_join(countOfWords, numberOfWords)
+  
+  
+  #try to clean the words, remove stopwords:
+  words <- words %>%
+    filter(!word %in% stop_words$word) %>%
+    filter(!word %in% customStopWords)
+  
+  #get tfidf and order of words by degree of relevance:
+  
+  return(tfidf <- words %>%
+    bind_tf_idf(word, !!groupColumn, n) %>%
+    select(-total) %>%
+    arrange(desc(tf_idf)) %>%
+    mutate(word = wordStem(word)) %>%
+    group_by(!!groupColumn, word) %>%
+    filter(tf_idf == max(tf_idf)) %>%
+    ungroup() %>%
+    mutate(word = factor(word, levels=rev(unique(word))))
+    )
+    #filter(unique(list(!!groupColumn, word)))
+  
+}
+
+
+tfidfTable <- topTermsTfidf(lyricsdb, lyrics, fullpath)
+tfidfTable = merge(x = select(tfidfTable, fullpath, word, tf_idf), y=lyricsdb, by="fullpath", all=TRUE)
+
+#Example for Sing
+tfidfTable %>%
+  filter(song == "Sing") %>%
+  arrange(-tf_idf) %>%
+  head(10)
+  
+
+```
+
+The above table shows some words for a particular song (*Sing by Ed Sheeran*). The important columns for us are word and tf_idf. 
+
+### Provide Textual description of the song that you want to search here:
+This is the textual description for the song that you want to look up: 
+```{r}
+searchThisSong <- "Protest song  Theme was violence  about people fighting with bombs and guns"
+#Thinking about zombie by cranberries
+```
+
+Process the above text so we have a set of tokens ready (similar to what the function generates, but since this is only a single document, we can just count the term frequency, which will mostly be 1). 
+```{r}
+
+searchSongDB <- data.frame(word = as.character(searchThisSong))
+searchSongDB$word = toString(searchSongDB$word)
+
+searchTokens <- unnest_tokens(searchSongDB, tokens, word)
+searchTokens = searchTokens %>%
+  group_by(tokens) %>%
+  summarise(tfidf = n())
+
+searchTokens$tokens = wordStem(searchTokens$tokens)
+searchTokens =unique(searchTokens) 
+
+head(searchTokens)
+
+```
+## Generating Vocab table:
+We need to generate a sparse vocabulary table in order to compare two columns. The vocab table will have one column with all the words from all song lyrics, and also our search terms. It will then have one column for every song and also a column for our search keywords. 
+
+```{r}
+vocab = tfidfTable$word
+vocab = append(searchTokens$tokens, as.character(vocab))
+vocab = unique(vocab)
+vocab = data.frame(word = vocab) # make a data frame
+vocab = data.table::setorder(vocab, word)#arranging in ascending order of words
+
+#Add a column for system's model:
+vocab = merge(x = vocab, y=select(searchTokens, word = tokens, searchTerms = tfidf), by="word", all = TRUE)
+vocab = vocab %>%
+  group_by(word) %>%
+  summarise(searchTerms = max(searchTerms))
+
+for(i in 1:nrow(lyricsdb)) {
+  songName = toString(lyricsdb$fullpath[i])
+  songTokens = tfidfTable %>%
+    filter(fullpath == lyricsdb$fullpath[i]) %>%
+    select(word, !!songName := tf_idf)
+  vocab = merge(x=vocab, y=songTokens, by="word", all=TRUE)
+  #vocab = vocab %>% rename(song = tf_idf)
+}
+
+write.csv(vocab, "Vocab.csv")
+head(vocab)
+
+```
+We can then use the vocab table to calculate the KL distances between search column and every other song, we show the top 10 songs with the least distance (and hopefully the first one is the song you were thinking about!):
+```{r}
+vocab2 = vocab
+
+checkDistance <- function(A, B) {
+  return(kl.dist(A,B)$D1)
+}
+
+
+allSongs = lyricsdb %>%
+  group_by(fullpath) %>%
+  summarise(n=n())
+
+distances = rep(0, length(allSongs$fullpath))
+
+vocab2 = vocab2 %>% replace(is.na(.), 0)
+
+i=1
+for(entry in allSongs$fullpath) {
+  distance = 999
+  distance = checkDistance(vocab2$searchTerms, vocab2[[entry]])
+  distances[i] = distance
+  i=i+1
+}
+lyricsdb$distance = distances
+
+lyricsdb %>%
+  arrange(distances) %>%
+  head(10)
+
+```
+
+
+***
+
+# Resources and Disclaimers:
+
+* Primary resource that this document is based on: https://www.kaggle.com/rtatman/nlp-in-r-topic-modelling
+
+* Theoretical concepts from: https://arxiv.org/pdf/1711.04305.pdf
+
+* This document is also vaguely similar to what I did for an independent study project with prof. Fleming, the approach is the same but the data sets (And the relevant changes) is very different. The document structure is also very different since that was a project report and not a guide. I would like to confirm that I have written this document from scratch for this project. 
+
+* The approach is also inspired from the concepts that I learnt in another course DS 5559: Exploratory Text Analytics. My final project in that course is also on topic modeling, but the course and all relevant work was done in Python. 
+
+
+
+

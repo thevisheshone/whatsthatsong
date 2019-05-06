@@ -1,0 +1,4 @@
+"0","#cleaning the lyrics:"
+"0","lyricsdb$lyrics = tm::removePunctuation(lyricsdb$lyrics, ucp=FALSE)"
+"0","lyricsdb$lyrics = tm::removeNumbers(lyricsdb$lyrics, ucp=FALSE)"
+"0","lyricsdb$lyrics = tm::stripWhitespace(lyricsdb$lyrics)"
